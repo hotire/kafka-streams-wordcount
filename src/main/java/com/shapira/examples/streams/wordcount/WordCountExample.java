@@ -1,17 +1,16 @@
 package com.shapira.examples.streams.wordcount;
 
+import java.util.Arrays;
+import java.util.Properties;
+import java.util.regex.Pattern;
 
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.StreamsBuilder;
-import java.util.Arrays;
-import java.util.Properties;
-import java.util.regex.Pattern;
 
 public class WordCountExample {
 
@@ -37,27 +36,24 @@ public class WordCountExample {
 
         KStream<String, String> source = builder.stream("wordcount-input");
 
-
         final Pattern pattern = Pattern.compile("\\W+");
-        KStream counts  = source.flatMapValues(value-> Arrays.asList(pattern.split(value.toLowerCase())))
-                .map((key, value) -> new KeyValue<Object, Object>(value, value))
-                .filter((key, value) -> (!value.equals("the")))
-                .groupByKey()
-                .count().mapValues(value->Long.toString(value)).toStream();
+        KStream<Object, String> counts = source.flatMapValues(value -> Arrays.asList(pattern.split(value.toLowerCase())))
+                                               .map((key, value) -> new KeyValue<Object, Object>(value, value))
+                                               .filter((key, value) -> (!value.equals("the")))
+                                               .groupByKey()
+                                               .count()
+                                               .mapValues(value -> Long.toString(value)).toStream();
         counts.to("wordcount-output");
 
-        KafkaStreams streams = new KafkaStreams(builder.build(), props);
+        try (KafkaStreams streams = new KafkaStreams(builder.build(), props)) {
+            // This is for reset to work. Don't use in production - it causes the app to re-load the state from Kafka on every start
+            streams.cleanUp();
 
-        // This is for reset to work. Don't use in production - it causes the app to re-load the state from Kafka on every start
-        streams.cleanUp();
+            streams.start();
 
-        streams.start();
-
-        // usually the stream application would be running forever,
-        // in this example we just let it run for some time and stop since the input data is finite.
-        Thread.sleep(5000L);
-
-        streams.close();
-
+            // usually the stream application would be running forever,
+            // in this example we just let it run for some time and stop since the input data is finite.
+            Thread.sleep(5000L);
+        }
     }
 }
